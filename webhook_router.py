@@ -1,379 +1,299 @@
 # webhook_router.py
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
-from datetime import datetime
 import os
 import json
+import datetime
 from pathlib import Path
-from pine_modifier import generate_modified_script, save_modified_code, api_key
+import pine_modifier
 
 router = APIRouter()
 
-# 기본 디렉토리 설정 (main.py에서 재설정됨)
-LOG_DIR = "storage/webhooks"
-STRATEGY_DIR = "storage/strategies"
+# 기본 디렉토리 설정
+BASE_DIR = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+LOG_DIR = BASE_DIR / "storage" / "webhooks"
+STRATEGY_DIR = BASE_DIR / "storage" / "strategies"
+
+# 디렉토리가 없으면 생성
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+STRATEGY_DIR.mkdir(parents=True, exist_ok=True)
 
 @router.post("/")
 async def receive_webhook(request: Request):
     """
-    TradingView 웹훅을 수신하고 자동으로 전략 코드를 분석 및 수정합니다.
-    
-    1. 웹훅 데이터 저장
-    2. 원본 전략 코드 로드
-    3. 자동 분석 및 수정
-    4. 결과 저장 (수정된 코드, 메타 정보)
+    TradingView에서 보낸 웹훅을 처리합니다.
     """
-    data = await request.json()
-    
-    # 웹훅 데이터 저장
-    now = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-    log_path = os.path.join(LOG_DIR, f"webhook_{now}.json")
-    
-    with open(log_path, "w") as f:
-        json.dump(data, f, indent=2)
-        
-    # 가장 최근 웹훅 로그를 latest.json으로 복사
-    latest_file = os.path.join(LOG_DIR, "latest.json")
-    with open(latest_file, "w") as f:
-        json.dump(data, f, indent=2)
-    
     try:
-        # 원본 전략 코드 로드
-        strategy_path = os.path.join(STRATEGY_DIR, "current.pine")
+        # 웹훅 데이터 받기
+        webhook_data = await request.json()
         
-        # Vercel 환경의 경우 샘플 전략 코드 생성
-        if not os.path.exists(strategy_path):
-            with open(strategy_path, "w") as f:
-                f.write("""
+        # 타임스탬프 생성
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # 웹훅 데이터 로깅
+        log_file = LOG_DIR / f"webhook_{timestamp}.json"
+        with open(log_file, 'w') as f:
+            json.dump(webhook_data, f, indent=4)
+        
+        # 샘플 전략 코드가 없으면 생성
+        current_strategy_file = STRATEGY_DIR / "current.pine"
+        if not current_strategy_file.exists():
+            sample_strategy_file = STRATEGY_DIR / "example.pine"
+            if sample_strategy_file.exists():
+                # 샘플 전략 파일을 current.pine으로 복사
+                with open(sample_strategy_file, 'r') as f:
+                    sample_code = f.read()
+                with open(current_strategy_file, 'w') as f:
+                    f.write(sample_code)
+            else:
+                # 샘플 전략 파일이 없는 경우 기본 코드 생성
+                with open(current_strategy_file, 'w') as f:
+                    f.write("""
 //@version=4
 strategy("Simple RSI Strategy", overlay=true)
-
-// 입력 변수
 rsiLength = input(14, title="RSI 기간")
 rsiOverbought = input(70, title="RSI 과매수 기준")
-rsiOversold = input(33, title="RSI 과매도 기준")
-takeProfitPct = input(5.0, title="이익 실현 %")
-stopLossPct = input(3.0, title="손절매 %")
-
-// RSI 계산
+rsiOversold = input(30, title="RSI 과매도 기준")
 rsiValue = rsi(close, rsiLength)
-
-// 진입 조건
-longCondition = crossover(rsiValue, rsiOversold)
-shortCondition = crossunder(rsiValue, rsiOverbought)
-
-// 전략 실행
-if (longCondition)
+if (crossover(rsiValue, rsiOversold))
     strategy.entry("RSI_Long", strategy.long)
-
-if (shortCondition)
+if (crossunder(rsiValue, rsiOverbought))
     strategy.entry("RSI_Short", strategy.short)
-
-// 이익 실현 및 손절매 설정
-strategy.exit("TP_SL_Long", "RSI_Long", profit=close*takeProfitPct/100, loss=close*stopLossPct/100)
-strategy.exit("TP_SL_Short", "RSI_Short", profit=close*takeProfitPct/100, loss=close*stopLossPct/100)
-
-// 시각화
-plot(rsiValue, "RSI", color.blue)
-hline(rsiOverbought, "과매수 기준", color.red)
-hline(rsiOversold, "과매도 기준", color.green)
-                """.strip())
+""")
         
-        with open(strategy_path, "r") as f:
+        # 원본 전략 코드 로드
+        with open(current_strategy_file, 'r') as f:
             original_code = f.read()
         
-        # 자동 분석 및 수정
-        result = generate_modified_script(original_code, json.dumps(data, indent=2))
+        # AI를 통한 수정된 코드 생성
+        modified_code = pine_modifier.generate_modified_script(original_code, webhook_data)
         
-        # 결과 저장
-        modified_path = os.path.join(STRATEGY_DIR, f"modified_{now}.pine")
-        with open(modified_path, "w") as f:
-            f.write(result["modified_code"])
-        
-        # 메타 정보 저장 (웹앱 연동용)
-        meta_path = os.path.join(STRATEGY_DIR, f"meta_{now}.json")
-        meta_data = {
-            "timestamp": now,
-            "reason": result["explanation"],
-            "original_code_path": strategy_path,
-            "modified_code_path": modified_path,
-            "webhook_data_path": log_path
-        }
-        
-        with open(meta_path, "w") as f:
-            json.dump(meta_data, f, indent=2)
-        
-        return {
-            "status": "auto-analyzed", 
-            "modified_file": modified_path,
-            "explanation": result["explanation"]
-        }
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"자동 분석 중 오류 발생: {str(e)}"}
+        # 수정된 코드와 메타데이터 저장
+        result = pine_modifier.save_modification(
+            original_code, 
+            modified_code, 
+            webhook_data,
+            str(STRATEGY_DIR)
         )
-
-@router.post("/test-analyze")
-async def test_analysis(request: Request):
-    """
-    테스트용 엔드포인트: 예제 전략 코드와 최근 웹훅 로그를 분석하여 수정된 코드를 생성합니다.
-    """
-    # 예제 전략 코드 파일이 존재하는지 확인
-    example_file = os.path.join(STRATEGY_DIR, "example.pine")
-    
-    # Vercel 환경의 경우 샘플 전략 코드 생성
-    if not os.path.exists(example_file):
-        with open(example_file, "w") as f:
-            f.write("""
-//@version=4
-strategy("Simple RSI Strategy", overlay=true)
-
-// 입력 변수
-rsiLength = input(14, title="RSI 기간")
-rsiOverbought = input(70, title="RSI 과매수 기준")
-rsiOversold = input(33, title="RSI 과매도 기준")
-takeProfitPct = input(5.0, title="이익 실현 %")
-stopLossPct = input(3.0, title="손절매 %")
-
-// RSI 계산
-rsiValue = rsi(close, rsiLength)
-
-// 진입 조건
-longCondition = crossover(rsiValue, rsiOversold)
-shortCondition = crossunder(rsiValue, rsiOverbought)
-
-// 전략 실행
-if (longCondition)
-    strategy.entry("RSI_Long", strategy.long)
-
-if (shortCondition)
-    strategy.entry("RSI_Short", strategy.short)
-
-// 이익 실현 및 손절매 설정
-strategy.exit("TP_SL_Long", "RSI_Long", profit=close*takeProfitPct/100, loss=close*stopLossPct/100)
-strategy.exit("TP_SL_Short", "RSI_Short", profit=close*takeProfitPct/100, loss=close*stopLossPct/100)
-
-// 시각화
-plot(rsiValue, "RSI", color.blue)
-hline(rsiOverbought, "과매수 기준", color.red)
-hline(rsiOversold, "과매도 기준", color.green)
-            """.strip())
-    
-    # 최근 웹훅 로그 파일이 존재하는지 확인
-    latest_log_file = os.path.join(LOG_DIR, "latest.json")
-    
-    # Vercel 환경의 경우 샘플 웹훅 데이터 생성
-    if not os.path.exists(latest_log_file):
-        with open(latest_log_file, "w") as f:
-            f.write(json.dumps({
-                "strategy_name": "Simple RSI Strategy",
-                "symbol": "BTCUSDT",
-                "timeframe": "1h",
-                "action": "buy",
-                "price": 52000,
-                "time": "2023-01-02T14:30:00Z",
-                "rsi_value": 32.5,
-                "last_trades": [
-                    {"action": "buy", "price": 51800, "time": "2023-01-02T13:30:00Z", "result": "loss", "pnl": -2.3},
-                    {"action": "buy", "price": 51500, "time": "2023-01-02T12:30:00Z", "result": "loss", "pnl": -1.8},
-                    {"action": "buy", "price": 51200, "time": "2023-01-02T11:30:00Z", "result": "loss", "pnl": -2.0},
-                    {"action": "buy", "price": 51000, "time": "2023-01-02T10:30:00Z", "result": "loss", "pnl": -2.2}
-                ],
-                "metrics": {
-                    "win_rate": 0.20,
-                    "avg_profit": 1.2,
-                    "avg_loss": -2.1,
-                    "max_drawdown": -8.3
-                },
-                "message": "RSI 기반 전략에서 지속적인 손실 발생. 과매도 기준 및 손절매 조정 필요"
-            }, indent=2))
-    
-    # 파일 내용 읽기
-    with open(example_file, "r") as f:
-        original_code = f.read()
-    
-    with open(latest_log_file, "r") as f:
-        recent_log = f.read()
-    
-    try:
-        # LLM을 통한 코드 수정 요청
-        result = generate_modified_script(original_code, recent_log)
-        
-        # 수정된 코드 저장
-        now = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-        modified_path = os.path.join(STRATEGY_DIR, f"modified_{now}.pine")
-        
-        with open(modified_path, "w") as f:
-            f.write(result["modified_code"])
-            
-        # 메타 정보 저장
-        meta_path = os.path.join(STRATEGY_DIR, f"meta_{now}.json")
-        meta_data = {
-            "timestamp": now,
-            "reason": result["explanation"],
-            "original_code_path": example_file,
-            "modified_code_path": modified_path,
-            "webhook_data_path": latest_log_file,
-            "is_test": True
-        }
-        
-        with open(meta_path, "w") as f:
-            json.dump(meta_data, f, indent=2)
         
         return {
-            "explanation": result["explanation"],
-            "file": modified_path
+            "status": "success",
+            "message": "웹훅 수신 및 전략 코드 수정 완료",
+            "log_file": str(log_file),
+            "modified_strategy": result["modified_file"],
+            "metadata_file": result["metadata_file"]
         }
     except Exception as e:
-        return {"error": f"분석 중 오류 발생: {str(e)}"}
+        import traceback
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "message": f"웹훅 처리 중 오류 발생: {str(e)}"
+        }
+
+@router.get("/test")
+async def test_analysis():
+    """
+    샘플 전략 코드와 최근 웹훅 로그를 사용하여 테스트 분석을 수행합니다.
+    """
+    try:
+        # 샘플 전략 코드 로드
+        example_strategy_file = STRATEGY_DIR / "example.pine"
+        with open(example_strategy_file, 'r') as f:
+            example_code = f.read()
+        
+        # 최근 웹훅 로그 찾기
+        webhook_files = list(LOG_DIR.glob("webhook_*.json"))
+        if not webhook_files:
+            return {
+                "status": "error",
+                "message": "웹훅 로그 파일이 없습니다."
+            }
+        
+        # 가장 최근 파일 로드
+        latest_webhook_file = max(webhook_files, key=lambda x: x.stat().st_mtime)
+        with open(latest_webhook_file, 'r') as f:
+            webhook_data = json.load(f)
+        
+        # AI를 통한 수정된 코드 생성
+        modified_code = pine_modifier.test_analysis(example_code, webhook_data)
+        
+        return {
+            "status": "success",
+            "original_code": example_code,
+            "modified_code": modified_code,
+            "webhook_data": webhook_data
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"테스트 분석 중 오류 발생: {str(e)}"
+        }
 
 @router.get("/history")
-async def get_strategy_history():
+async def get_modification_history():
     """
-    전략 수정 히스토리를 반환합니다.
-    메타 데이터 파일들을 읽어서 시간순으로 정렬된 목록을 제공합니다.
+    수정 내역 메타데이터를 반환합니다.
     """
     try:
-        # meta_*.json 파일들을 찾아서 시간순으로 정렬
-        meta_files = sorted(
-            Path(STRATEGY_DIR).glob("meta_*.json"), 
-            key=lambda x: x.name, 
-            reverse=True
-        )
+        # 메타데이터 파일 찾기
+        metadata_files = list(STRATEGY_DIR.glob("metadata_*.json"))
+        if not metadata_files:
+            return {
+                "status": "success",
+                "history": []
+            }
         
-        # 각 파일의 내용을 읽어서 목록에 추가
-        result = []
-        for file in meta_files:
+        # 최신 순으로 정렬
+        metadata_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        
+        # 메타데이터 로드
+        history = []
+        for file in metadata_files:
             try:
-                with open(file, "r") as f:
-                    meta_data = json.load(f)
-                    result.append(meta_data)
+                with open(file, 'r') as f:
+                    metadata = json.load(f)
+                    
+                # 중요 정보만 선택
+                history.append({
+                    "timestamp": metadata.get("timestamp", ""),
+                    "original_strategy": metadata.get("original_strategy", ""),
+                    "modified_strategy": metadata.get("modified_strategy", ""),
+                    "performance_before": metadata.get("performance_before", {}),
+                    "modification_summary": metadata.get("modification_summary", "")
+                })
             except Exception as e:
-                print(f"메타 파일 읽기 오류: {str(e)} - {file}")
-                continue
+                print(f"메타데이터 파일 '{file}' 처리 중 오류: {str(e)}")
         
-        return result
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"히스토리 조회 중 오류 발생: {str(e)}"}
-        )
-
-@router.get("/code")
-async def get_code_file(path: str):
-    """
-    지정된 경로의 코드 파일 내용을 텍스트로 반환합니다.
-    """
-    try:
-        if not os.path.exists(path):
-            return JSONResponse(
-                status_code=404,
-                content={"error": "파일을 찾을 수 없습니다."}
-            )
-        
-        # 보안 검사: 경로가 올바른 디렉토리에 있는지 확인
-        real_path = os.path.realpath(path)
-        strategy_dir_real = os.path.realpath(STRATEGY_DIR)
-        
-        if not real_path.startswith(strategy_dir_real) and not "/tmp/storage/strategies" in real_path:
-            return JSONResponse(
-                status_code=403,
-                content={"error": "허용되지 않은 경로입니다."}
-            )
-        
-        # 파일 내용 읽기
-        with open(path, "r") as f:
-            content = f.read()
-            
-        return content
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"파일 읽기 오류: {str(e)}"}
-        )
-
-@router.get("/data")
-async def get_webhook_data(path: str):
-    """
-    지정된 경로의 웹훅 데이터 파일을 JSON으로 반환합니다.
-    """
-    try:
-        if not os.path.exists(path):
-            return JSONResponse(
-                status_code=404,
-                content={"error": "파일을 찾을 수 없습니다."}
-            )
-        
-        # 보안 검사: 경로가 올바른 디렉토리에 있는지 확인
-        real_path = os.path.realpath(path)
-        log_dir_real = os.path.realpath(LOG_DIR)
-        
-        if not real_path.startswith(log_dir_real) and not "/tmp/storage/webhooks" in real_path:
-            return JSONResponse(
-                status_code=403,
-                content={"error": "허용되지 않은 경로입니다."}
-            )
-        
-        # 파일 내용 읽기
-        with open(path, "r") as f:
-            data = json.load(f)
-            
-        return data
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"파일 읽기 오류: {str(e)}"}
-        )
-
-@router.get("/latest")
-async def get_latest_webhook():
-    """
-    가장 최근의 웹훅 데이터를 반환합니다.
-    """
-    latest_file = os.path.join(LOG_DIR, "latest.json")
-    
-    if not os.path.exists(latest_file):
-        # 샘플 데이터 파일 사용
-        sample_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sample_webhook.json")
-        
-        if os.path.exists(sample_file):
-            try:
-                with open(sample_file, "r") as f:
-                    return json.load(f)
-            except Exception:
-                pass
-                
         return {
-            "timestamp": datetime.now().isoformat(),
-            "message": "아직 수신된 웹훅이 없습니다.",
-            "recent_signals": []
+            "status": "success",
+            "history": history
         }
-    
-    try:
-        with open(latest_file, "r") as f:
-            return json.load(f)
     except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"error": f"최근 웹훅 데이터 읽기 오류: {str(e)}"}
-        )
+        return {
+            "status": "error",
+            "message": f"수정 내역 조회 중 오류 발생: {str(e)}"
+        }
 
 @router.get("/status")
 async def get_system_status():
     """
     시스템 상태 정보를 반환합니다.
     """
-    # 최근 로그 파일이 있는지 확인
-    latest_file = os.path.join(LOG_DIR, "latest.json")
-    webhook_ready = os.path.exists(latest_file)
-    
-    return {
-        "use_openai": api_key is not None,
-        "webhook_ready": webhook_ready,
-        "server_time": datetime.now().isoformat(),
-        "storage_status": {
-            "log_dir": os.path.exists(LOG_DIR),
-            "strategy_dir": os.path.exists(STRATEGY_DIR)
+    try:
+        # 웹훅 로그 파일 카운트
+        webhook_count = len(list(LOG_DIR.glob("webhook_*.json")))
+        
+        # 전략 파일 카운트
+        strategy_count = len(list(STRATEGY_DIR.glob("*.pine")))
+        
+        # 수정 내역 메타데이터 카운트
+        metadata_count = len(list(STRATEGY_DIR.glob("metadata_*.json")))
+        
+        # 최근 웹훅 데이터
+        webhook_files = list(LOG_DIR.glob("webhook_*.json"))
+        latest_webhook = None
+        if webhook_files:
+            latest_webhook_file = max(webhook_files, key=lambda x: x.stat().st_mtime)
+            try:
+                with open(latest_webhook_file, 'r') as f:
+                    latest_webhook = {
+                        "file": str(latest_webhook_file),
+                        "timestamp": datetime.datetime.fromtimestamp(latest_webhook_file.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+            except Exception as e:
+                latest_webhook = {"error": str(e)}
+        
+        # OpenAI API 키 상태
+        api_key_status = "사용 가능" if pine_modifier.api_key is not None else "설정되지 않음"
+        
+        return {
+            "status": "operational",
+            "webhook_count": webhook_count,
+            "strategy_count": strategy_count,
+            "modification_count": metadata_count,
+            "latest_webhook": latest_webhook,
+            "api_key_status": api_key_status,
+            "server_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
-    }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"시스템 상태 조회 중 오류 발생: {str(e)}"
+        }
+
+@router.get("/strategy/{filename}")
+async def get_strategy_code(filename: str):
+    """
+    특정 전략 코드를 반환합니다.
+    """
+    try:
+        # 보안 체크: 파일명에 경로 문자가 포함되어 있는지 확인
+        if "../" in filename or "..\\" in filename:
+            raise HTTPException(status_code=400, detail="잘못된 파일명 형식입니다.")
+            
+        strategy_file = STRATEGY_DIR / filename
+        
+        # 파일 존재 여부 확인
+        if not strategy_file.exists():
+            raise HTTPException(status_code=404, detail=f"전략 파일 '{filename}'을 찾을 수 없습니다.")
+            
+        # 파일이 디렉토리인지 확인
+        if strategy_file.is_dir():
+            raise HTTPException(status_code=400, detail=f"'{filename}'은 디렉토리입니다.")
+            
+        # 파일 접근 권한 확인
+        if not os.access(strategy_file, os.R_OK):
+            raise HTTPException(status_code=403, detail=f"전략 파일 '{filename}'에 접근할 수 없습니다.")
+            
+        # 파일 내용 읽기
+        with open(strategy_file, 'r') as f:
+            code = f.read()
+            
+        return {
+            "status": "success",
+            "filename": filename,
+            "code": code
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"전략 파일 읽기 중 오류 발생: {str(e)}")
+
+@router.get("/webhook/{filename}")
+async def get_webhook_data(filename: str):
+    """
+    특정 웹훅 데이터를 반환합니다.
+    """
+    try:
+        # 보안 체크: 파일명에 경로 문자가 포함되어 있는지 확인
+        if "../" in filename or "..\\" in filename:
+            raise HTTPException(status_code=400, detail="잘못된 파일명 형식입니다.")
+            
+        webhook_file = LOG_DIR / filename
+        
+        # 파일 존재 여부 확인
+        if not webhook_file.exists():
+            raise HTTPException(status_code=404, detail=f"웹훅 파일 '{filename}'을 찾을 수 없습니다.")
+            
+        # 파일이 디렉토리인지 확인
+        if webhook_file.is_dir():
+            raise HTTPException(status_code=400, detail=f"'{filename}'은 디렉토리입니다.")
+            
+        # 파일 접근 권한 확인
+        if not os.access(webhook_file, os.R_OK):
+            raise HTTPException(status_code=403, detail=f"웹훅 파일 '{filename}'에 접근할 수 없습니다.")
+            
+        # 파일 내용 읽기
+        with open(webhook_file, 'r') as f:
+            data = json.load(f)
+            
+        return {
+            "status": "success",
+            "filename": filename,
+            "data": data
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"웹훅 파일 읽기 중 오류 발생: {str(e)}")

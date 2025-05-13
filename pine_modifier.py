@@ -1,7 +1,11 @@
 # pine_modifier.py
 import os
 import re
+import json
+import datetime
+from pathlib import Path
 from dotenv import load_dotenv
+import openai
 
 # 환경 변수 로드
 load_dotenv()
@@ -9,14 +13,13 @@ load_dotenv()
 # API 키 확인 및 적절한 모듈 선택
 api_key = os.getenv("OPENAI_API_KEY")
 if api_key:
-    from openai import OpenAI
-    client = OpenAI(api_key=api_key)
     use_mock = False
     print("실제 OpenAI API를 사용합니다.")
 else:
-    from mock_openai import ChatCompletion
     use_mock = True
     print("API 키가 없어 모의 OpenAI API를 사용합니다.")
+
+openai.api_key = api_key
 
 def load_prompt_template():
     """프롬프트 템플릿을 로드합니다."""
@@ -43,51 +46,110 @@ def load_prompt_template():
     with open(template_path, "r") as f:
         return f.read()
 
-def generate_modified_script(original_code: str, recent_log: str) -> dict:
+def load_strategy_code(strategy_file):
+    """전략 코드 파일을 로드합니다."""
+    with open(strategy_file, 'r') as file:
+        return file.read()
+
+def generate_modified_script(original_code, webhook_data):
     """
-    원본 전략 코드와 최근 거래 로그를 기반으로 LLM을 통해 수정된 코드를 생성합니다.
-    
-    Args:
-        original_code (str): Pine Script 원본 코드
-        recent_log (str): 최근 거래 로그 (JSON 형식)
+    OpenAI를 사용하여 거래 성능 분석 및 입력 데이터를 기반으로 수정된 트레이딩 스크립트를 생성합니다.
+    """
+    try:
+        # 데이터 준비
+        analysis = webhook_data.get("trading_problem", "성능 데이터 없음")
+        suggestions = webhook_data.get("suggested_improvements", "개선 제안 없음")
         
-    Returns:
-        dict: 설명과 수정된 코드를 포함한 딕셔너리
-    """
-    prompt = load_prompt_template().format(
-        original_code=original_code,
-        recent_log=recent_log
-    )
-
-    # API 호출 (실제 또는 모의)
-    if use_mock:
-        response = ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.4,
+        # API 요청
+        response = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": """
+                당신은 트레이딩 전략 최적화 전문가입니다. TradingView의 Pine Script로 작성된 트레이딩 전략을 
+                분석하고 개선하는 일을 담당합니다. 제공된 성능 데이터와 문제점을 분석하여 거래 전략을 
+                최적화하세요. 수정된 전체 코드를 반환해야 합니다.
+                """},
+                {"role": "user", "content": f"""
+                # 원본 Pine Script 코드:
+                ```
+                {original_code}
+                ```
+                
+                # 성능 분석:
+                {analysis}
+                
+                # 개선 제안:
+                {suggestions}
+                
+                # 요구사항:
+                1. 위 개선 제안을 반영하여 Pine Script 코드를 수정해주세요.
+                2. 기존 코드의 구조를 최대한 유지하면서 핵심 로직을 개선해주세요.
+                3. 수정된 전체 코드를 반환해주세요.
+                4. 코드에 중요한 변경 사항에 주석을 추가해주세요.
+                ```
+                """}
+            ],
+            temperature=0.2,
+            max_tokens=2500
         )
-        result = response["choices"][0].message.content
-    else:
-        try:
-            # 최신 OpenAI 클라이언트 버전 사용
-            response = client.chat.completions.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.4,
-            )
-            result = response.choices[0].message.content
-        except Exception as e:
-            print(f"OpenAI API 호출 중 오류 발생: {str(e)}")
-            # 오류 발생 시 모의 응답으로 대체
-            from mock_openai import ChatCompletion
-            response = ChatCompletion.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.4,
-            )
-            result = response["choices"][0].message.content
+        
+        # 응답에서 코드 추출
+        modified_code = response.choices[0].message.content
+        
+        # 코드 블록 추출
+        if "```" in modified_code:
+            code_blocks = modified_code.split("```")
+            for block in code_blocks:
+                # pine, pinescript 등으로 시작하는 코드 블록이나 코드 블록만 있는 경우
+                if block.strip().startswith("pine") or not block.strip().startswith(("pine", "#")):
+                    clean_code = block.replace("pine", "").replace("pinescript", "").strip()
+                    if clean_code and not clean_code.startswith("#"):
+                        return clean_code
+        
+        # 코드 블록이 없는 경우 전체 응답 반환
+        return modified_code
+        
+    except Exception as e:
+        print(f"AI 수정 오류: {e}")
+        return original_code + f"\n\n// AI 수정 실패: {e}"
 
-    return parse_response(result)
+def save_modification(strategy_code, modified_code, webhook_data, strategy_dir):
+    """
+    수정된 전략 코드와 메타데이터를 저장합니다.
+    """
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # 수정된 전략 코드 저장
+    strategy_dir_path = Path(strategy_dir)
+    modified_file = strategy_dir_path / f"modified_{timestamp}.pine"
+    with open(modified_file, 'w') as file:
+        file.write(modified_code)
+    
+    # 메타데이터 저장
+    metadata = {
+        "timestamp": timestamp,
+        "original_strategy": "current.pine",
+        "modified_strategy": f"modified_{timestamp}.pine",
+        "webhook_data": webhook_data,
+        "performance_before": webhook_data.get("performance", {}),
+        "modification_summary": webhook_data.get("suggested_improvements", "")
+    }
+    
+    metadata_file = strategy_dir_path / f"metadata_{timestamp}.json"
+    with open(metadata_file, 'w') as file:
+        json.dump(metadata, file, indent=4)
+    
+    return {
+        "timestamp": timestamp,
+        "modified_file": str(modified_file),
+        "metadata_file": str(metadata_file)
+    }
+
+def test_analysis(strategy_code, sample_webhook_data):
+    """
+    테스트 분석을 위한 메서드
+    """
+    return generate_modified_script(strategy_code, sample_webhook_data)
 
 def parse_response(response_text: str) -> dict:
     """
