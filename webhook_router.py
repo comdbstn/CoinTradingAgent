@@ -1,11 +1,11 @@
 # webhook_router.py
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from datetime import datetime
 import os
 import json
 from pathlib import Path
-from pine_modifier import generate_modified_script, save_modified_code
+from pine_modifier import generate_modified_script, save_modified_code, api_key
 
 router = APIRouter()
 
@@ -92,14 +92,16 @@ hline(rsiOversold, "과매도 기준", color.green)
         
         # 메타 정보 저장 (웹앱 연동용)
         meta_path = os.path.join(STRATEGY_DIR, f"meta_{now}.json")
+        meta_data = {
+            "timestamp": now,
+            "reason": result["explanation"],
+            "original_code_path": strategy_path,
+            "modified_code_path": modified_path,
+            "webhook_data_path": log_path
+        }
+        
         with open(meta_path, "w") as f:
-            json.dump({
-                "timestamp": now,
-                "reason": result["explanation"],
-                "original_code_path": strategy_path,
-                "modified_code_path": modified_path,
-                "webhook_data_path": log_path
-            }, f, indent=2)
+            json.dump(meta_data, f, indent=2)
         
         return {
             "status": "auto-analyzed", 
@@ -199,11 +201,29 @@ hline(rsiOversold, "과매도 기준", color.green)
         result = generate_modified_script(original_code, recent_log)
         
         # 수정된 코드 저장
-        output_file = save_modified_code(result["modified_code"])
+        now = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+        modified_path = os.path.join(STRATEGY_DIR, f"modified_{now}.pine")
+        
+        with open(modified_path, "w") as f:
+            f.write(result["modified_code"])
+            
+        # 메타 정보 저장
+        meta_path = os.path.join(STRATEGY_DIR, f"meta_{now}.json")
+        meta_data = {
+            "timestamp": now,
+            "reason": result["explanation"],
+            "original_code_path": example_file,
+            "modified_code_path": modified_path,
+            "webhook_data_path": latest_log_file,
+            "is_test": True
+        }
+        
+        with open(meta_path, "w") as f:
+            json.dump(meta_data, f, indent=2)
         
         return {
             "explanation": result["explanation"],
-            "file": output_file
+            "file": modified_path
         }
     except Exception as e:
         return {"error": f"분석 중 오류 발생: {str(e)}"}
@@ -225,13 +245,135 @@ async def get_strategy_history():
         # 각 파일의 내용을 읽어서 목록에 추가
         result = []
         for file in meta_files:
-            with open(file, "r") as f:
-                meta_data = json.load(f)
-                result.append(meta_data)
+            try:
+                with open(file, "r") as f:
+                    meta_data = json.load(f)
+                    result.append(meta_data)
+            except Exception as e:
+                print(f"메타 파일 읽기 오류: {str(e)} - {file}")
+                continue
         
         return result
     except Exception as e:
         return JSONResponse(
             status_code=500,
             content={"error": f"히스토리 조회 중 오류 발생: {str(e)}"}
-        ) 
+        )
+
+@router.get("/code")
+async def get_code_file(path: str):
+    """
+    지정된 경로의 코드 파일 내용을 텍스트로 반환합니다.
+    """
+    try:
+        if not os.path.exists(path):
+            return JSONResponse(
+                status_code=404,
+                content={"error": "파일을 찾을 수 없습니다."}
+            )
+        
+        # 보안 검사: 경로가 올바른 디렉토리에 있는지 확인
+        real_path = os.path.realpath(path)
+        strategy_dir_real = os.path.realpath(STRATEGY_DIR)
+        
+        if not real_path.startswith(strategy_dir_real) and not "/tmp/storage/strategies" in real_path:
+            return JSONResponse(
+                status_code=403,
+                content={"error": "허용되지 않은 경로입니다."}
+            )
+        
+        # 파일 내용 읽기
+        with open(path, "r") as f:
+            content = f.read()
+            
+        return content
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"파일 읽기 오류: {str(e)}"}
+        )
+
+@router.get("/data")
+async def get_webhook_data(path: str):
+    """
+    지정된 경로의 웹훅 데이터 파일을 JSON으로 반환합니다.
+    """
+    try:
+        if not os.path.exists(path):
+            return JSONResponse(
+                status_code=404,
+                content={"error": "파일을 찾을 수 없습니다."}
+            )
+        
+        # 보안 검사: 경로가 올바른 디렉토리에 있는지 확인
+        real_path = os.path.realpath(path)
+        log_dir_real = os.path.realpath(LOG_DIR)
+        
+        if not real_path.startswith(log_dir_real) and not "/tmp/storage/webhooks" in real_path:
+            return JSONResponse(
+                status_code=403,
+                content={"error": "허용되지 않은 경로입니다."}
+            )
+        
+        # 파일 내용 읽기
+        with open(path, "r") as f:
+            data = json.load(f)
+            
+        return data
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"파일 읽기 오류: {str(e)}"}
+        )
+
+@router.get("/latest")
+async def get_latest_webhook():
+    """
+    가장 최근의 웹훅 데이터를 반환합니다.
+    """
+    latest_file = os.path.join(LOG_DIR, "latest.json")
+    
+    if not os.path.exists(latest_file):
+        # 샘플 데이터 파일 사용
+        sample_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sample_webhook.json")
+        
+        if os.path.exists(sample_file):
+            try:
+                with open(sample_file, "r") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+                
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "message": "아직 수신된 웹훅이 없습니다.",
+            "recent_signals": []
+        }
+    
+    try:
+        with open(latest_file, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"최근 웹훅 데이터 읽기 오류: {str(e)}"}
+        )
+
+@router.get("/status")
+async def get_system_status():
+    """
+    시스템 상태 정보를 반환합니다.
+    """
+    # 최근 로그 파일이 있는지 확인
+    latest_file = os.path.join(LOG_DIR, "latest.json")
+    webhook_ready = os.path.exists(latest_file)
+    
+    return {
+        "use_openai": api_key is not None,
+        "webhook_ready": webhook_ready,
+        "server_time": datetime.now().isoformat(),
+        "storage_status": {
+            "log_dir": os.path.exists(LOG_DIR),
+            "strategy_dir": os.path.exists(STRATEGY_DIR)
+        }
+    }

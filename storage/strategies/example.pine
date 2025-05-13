@@ -1,10 +1,10 @@
 //@version=4
-strategy("Simple RSI Strategy", overlay=true)
+strategy("Simple RSI Strategy", overlay=true, pyramiding=0, default_qty_type=strategy.percent_of_equity, default_qty_value=10)
 
 // 입력 변수
 rsiLength = input(14, title="RSI 기간")
 rsiOverbought = input(70, title="RSI 과매수 기준")
-rsiOversold = input(33, title="RSI 과매도 기준")
+rsiOversold = input(33, title="RSI 과매도 기준") // 이 값이 너무 높음
 takeProfitPct = input(5.0, title="이익 실현 %")
 stopLossPct = input(3.0, title="손절매 %")
 
@@ -22,9 +22,11 @@ if (longCondition)
 if (shortCondition)
     strategy.entry("RSI_Short", strategy.short)
 
-// 이익 실현 및 손절매 설정
-strategy.exit("TP_SL_Long", "RSI_Long", profit=close*takeProfitPct/100, loss=close*stopLossPct/100)
-strategy.exit("TP_SL_Short", "RSI_Short", profit=close*takeProfitPct/100, loss=close*stopLossPct/100)
+// 이익 실현 및 손절매 설정 (개선이 필요한 방식)
+if (strategy.position_size > 0)
+    strategy.exit("TP_SL_Long", "RSI_Long", profit=close * takeProfitPct / 100, loss=close * stopLossPct / 100)
+else if (strategy.position_size < 0)
+    strategy.exit("TP_SL_Short", "RSI_Short", profit=close * takeProfitPct / 100, loss=close * stopLossPct / 100)
 
 // 시각화
 plot(rsiValue, "RSI", color.blue)

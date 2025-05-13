@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Auto-Trading Code Modifier</title>
+    <title>코인 트레이딩 자동 코드 수정 시스템</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -15,23 +16,6 @@
             margin-bottom: 20px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
-        .api-url {
-            background-color: #f7f7f9;
-            padding: 10px;
-            border-radius: 5px;
-            font-family: monospace;
-        }
-        .method {
-            font-weight: bold;
-            display: inline-block;
-            width: 60px;
-        }
-        .method-post {
-            color: #198754;
-        }
-        .method-get {
-            color: #0d6efd;
-        }
         .header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -39,85 +23,160 @@
             margin-bottom: 2rem;
             border-radius: 0 0 10px 10px;
         }
+        .code-block {
+            background-color: #f7f7f9;
+            border-radius: 5px;
+            padding: 15px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .trade-record {
+            border-left: 4px solid #0d6efd;
+            padding-left: 15px;
+            margin-bottom: 15px;
+        }
+        .profit {
+            color: #198754;
+        }
+        .loss {
+            color: #dc3545;
+        }
+        .nav-tabs .nav-link.active {
+            font-weight: bold;
+            border-bottom-color: #764ba2;
+        }
+        .timestamp {
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+        .refresh-btn {
+            margin-left: 10px;
+        }
+        #loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left: 4px solid #764ba2;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <div class="container">
-            <h1 class="display-4">Auto-Trading Code Modifier</h1>
-            <p class="lead">LLM 기반 자동 코드 수정 시스템</p>
+            <h1 class="display-4">코인 트레이딩 자동 코드 수정 시스템</h1>
+            <p class="lead">거래 내역 분석 및 AI 기반 전략 코드 최적화</p>
         </div>
     </div>
 
     <div class="container">
-        <div class="row">
-            <div class="col-md-8">
-                <div class="card">
-                    <div class="card-header">
-                        <h2>시스템 개요</h2>
-                    </div>
-                    <div class="card-body">
-                        <p>이 시스템은 TradingView에서 보내는 웹훅을 수신하여 자동으로 Pine Script 코드를 분석하고 개선하는 기능을 제공합니다.</p>
-                        <p>대규모 언어 모델(LLM)을 활용하여 거래 데이터와 전략 코드를 분석하고, 문제점을 파악하여 자동으로 코드를 수정합니다.</p>
-                    </div>
+        <ul class="nav nav-tabs mb-4" id="myTab" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="history-tab" data-bs-toggle="tab" data-bs-target="#history" type="button" role="tab" aria-controls="history" aria-selected="true">
+                    <i class="fas fa-history"></i> 코드 수정 내역
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="trades-tab" data-bs-toggle="tab" data-bs-target="#trades" type="button" role="tab" aria-controls="trades" aria-selected="false">
+                    <i class="fas fa-exchange-alt"></i> 최근 거래 기록
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="test-tab" data-bs-toggle="tab" data-bs-target="#test" type="button" role="tab" aria-controls="test" aria-selected="false">
+                    <i class="fas fa-flask"></i> 코드 분석 테스트
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="myTabContent">
+            <!-- 코드 수정 내역 탭 -->
+            <div class="tab-pane fade show active" id="history" role="tabpanel" aria-labelledby="history-tab">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2>코드 수정 내역</h2>
+                    <button id="refresh-history" class="btn btn-outline-primary">
+                        <i class="fas fa-sync-alt"></i> 새로고침
+                    </button>
                 </div>
+                <div id="loading-history">
+                    <div class="spinner"></div> 데이터를 불러오는 중...
+                </div>
+                <div id="history-container"></div>
+            </div>
 
+            <!-- 최근 거래 기록 탭 -->
+            <div class="tab-pane fade" id="trades" role="tabpanel" aria-labelledby="trades-tab">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2>최근 거래 기록</h2>
+                    <button id="refresh-trades" class="btn btn-outline-primary">
+                        <i class="fas fa-sync-alt"></i> 새로고침
+                    </button>
+                </div>
+                <div id="loading-trades">
+                    <div class="spinner"></div> 데이터를 불러오는 중...
+                </div>
+                <div id="trades-container"></div>
+            </div>
+
+            <!-- 코드 분석 테스트 탭 -->
+            <div class="tab-pane fade" id="test" role="tabpanel" aria-labelledby="test-tab">
+                <h2>코드 분석 테스트</h2>
                 <div class="card">
                     <div class="card-header">
-                        <h2>API 엔드포인트</h2>
+                        <h3>예제 코드 분석</h3>
                     </div>
                     <div class="card-body">
-                        <h4>TradingView 웹훅 수신</h4>
-                        <div class="api-url mb-3">
-                            <span class="method method-post">POST</span> /webhook/
+                        <p>예제 전략 코드와 최근 웹훅 로그를 분석하여 새로운 코드를 생성합니다.</p>
+                        <button id="run-test" class="btn btn-primary">
+                            <i class="fas fa-play"></i> 분석 실행
+                        </button>
+                        <div id="loading-test" class="mt-3" style="display: none;">
+                            <div class="spinner"></div> 코드 분석 중... (약 10-30초 소요)
                         </div>
-                        <p>TradingView에서 보내는 웹훅을 수신하여 자동으로 전략 코드를 분석하고 개선합니다.</p>
-
-                        <h4>수정 기록 조회</h4>
-                        <div class="api-url mb-3">
-                            <span class="method method-get">GET</span> /webhook/history
-                        </div>
-                        <p>코드 수정 기록을 시간순으로 조회합니다.</p>
-
-                        <h4>테스트용 분석 실행</h4>
-                        <div class="api-url mb-3">
-                            <span class="method method-post">POST</span> /webhook/test-analyze
-                        </div>
-                        <p>테스트용 엔드포인트: 예제 전략 코드와 최근 웹훅 로그를 분석하여 수정된 코드를 생성합니다.</p>
+                        <div id="test-result" class="mt-3"></div>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-header">
-                        <h2>빠른 링크</h2>
-                    </div>
-                    <div class="card-body">
-                        <ul class="list-group">
-                            <li class="list-group-item">
-                                <a href="/docs" class="btn btn-primary w-100">API 문서 (Swagger UI)</a>
-                            </li>
-                            <li class="list-group-item">
-                                <a href="/redoc" class="btn btn-secondary w-100">API 문서 (ReDoc)</a>
-                            </li>
-                            <li class="list-group-item">
-                                <a href="/webhook/history" class="btn btn-info w-100 text-white">코드 수정 기록 조회</a>
-                            </li>
-                        </ul>
-                    </div>
+        <div class="mt-5">
+            <div class="card">
+                <div class="card-header">
+                    <h3>시스템 상태</h3>
                 </div>
-
-                <div class="card">
-                    <div class="card-header">
-                        <h2>시스템 상태</h2>
-                    </div>
-                    <div class="card-body">
-                        <div class="alert alert-success">
-                            <strong>서버 상태:</strong> 실행 중
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="alert alert-success">
+                                <i class="fas fa-server"></i> <strong>서버 상태:</strong> 
+                                <span id="server-status">실행 중</span>
+                            </div>
                         </div>
-                        <div class="alert alert-info">
-                            <strong>LLM 모델:</strong> <span id="llm-model">GPT-4 / 모의 구현</span>
+                        <div class="col-md-4">
+                            <div class="alert alert-info">
+                                <i class="fas fa-robot"></i> <strong>AI 모델:</strong> 
+                                <span id="ai-model">GPT-4</span>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="alert alert-warning">
+                                <i class="fas fa-exchange-alt"></i> <strong>웹훅:</strong> 
+                                <span id="webhook-status">준비됨</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -125,10 +184,311 @@
         </div>
 
         <footer class="mt-5 mb-3 text-center text-muted">
-            <p>&copy; 2023 Auto-Trading Code Modifier</p>
+            <p>&copy; 2025 코인 트레이딩 자동 코드 수정 시스템</p>
         </footer>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 페이지 로드 시 실행
+        document.addEventListener('DOMContentLoaded', function() {
+            fetchHistory();
+            fetchLatestTrades();
+            checkServerStatus();
+            
+            // 새로고침 버튼 이벤트 리스너
+            document.getElementById('refresh-history').addEventListener('click', fetchHistory);
+            document.getElementById('refresh-trades').addEventListener('click', fetchLatestTrades);
+            document.getElementById('run-test').addEventListener('click', runTest);
+        });
+
+        // 코드 수정 내역 가져오기
+        function fetchHistory() {
+            const historyContainer = document.getElementById('history-container');
+            const loadingHistory = document.getElementById('loading-history');
+            
+            historyContainer.innerHTML = '';
+            loadingHistory.style.display = 'block';
+            
+            fetch('/webhook/history')
+                .then(response => response.json())
+                .then(data => {
+                    loadingHistory.style.display = 'none';
+                    
+                    if (data.length === 0) {
+                        historyContainer.innerHTML = '<div class="alert alert-info">아직 수정 내역이 없습니다.</div>';
+                        return;
+                    }
+                    
+                    data.forEach(item => {
+                        const card = document.createElement('div');
+                        card.className = 'card mb-4';
+                        
+                        // 날짜 형식 변환
+                        const timestamp = item.timestamp;
+                        const year = timestamp.substring(0, 4);
+                        const month = timestamp.substring(4, 6);
+                        const day = timestamp.substring(6, 8);
+                        const hour = timestamp.substring(9, 11);
+                        const minute = timestamp.substring(11, 13);
+                        const second = timestamp.substring(13, 15);
+                        const formattedDate = `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+                        
+                        card.innerHTML = `
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h4>코드 수정</h4>
+                                <span class="timestamp"><i class="far fa-clock"></i> ${formattedDate}</span>
+                            </div>
+                            <div class="card-body">
+                                <h5>수정 이유:</h5>
+                                <p>${item.reason}</p>
+                                <div class="d-flex justify-content-between mt-4">
+                                    <button class="btn btn-outline-primary btn-sm view-code" data-path="${item.modified_code_path}">
+                                        <i class="fas fa-code"></i> 수정된 코드 보기
+                                    </button>
+                                    <button class="btn btn-outline-secondary btn-sm view-webhook" data-path="${item.webhook_data_path}">
+                                        <i class="fas fa-file-alt"></i> 웹훅 데이터 보기
+                                    </button>
+                                </div>
+                                <div class="code-container mt-3" style="display: none;"></div>
+                            </div>
+                        `;
+                        
+                        historyContainer.appendChild(card);
+                        
+                        // 코드 보기 버튼 이벤트 리스너
+                        card.querySelector('.view-code').addEventListener('click', function() {
+                            const path = this.getAttribute('data-path');
+                            const codeContainer = this.closest('.card-body').querySelector('.code-container');
+                            
+                            if (codeContainer.style.display === 'none' || codeContainer.innerHTML === '') {
+                                codeContainer.style.display = 'block';
+                                codeContainer.innerHTML = '<div class="spinner"></div> 코드를 불러오는 중...';
+                                
+                                // 코드 내용을 가져오는 API 엔드포인트를 만들어야 합니다
+                                fetch(`/webhook/code?path=${encodeURIComponent(path)}`)
+                                    .then(response => response.text())
+                                    .then(code => {
+                                        codeContainer.innerHTML = `<pre class="code-block">${code}</pre>`;
+                                    })
+                                    .catch(error => {
+                                        codeContainer.innerHTML = `<div class="alert alert-danger">코드를 불러오는 중 오류가 발생했습니다: ${error}</div>`;
+                                    });
+                            } else {
+                                codeContainer.style.display = 'none';
+                            }
+                        });
+                        
+                        // 웹훅 데이터 보기 버튼 이벤트 리스너
+                        card.querySelector('.view-webhook').addEventListener('click', function() {
+                            const path = this.getAttribute('data-path');
+                            const codeContainer = this.closest('.card-body').querySelector('.code-container');
+                            
+                            if (codeContainer.style.display === 'none' || codeContainer.innerHTML === '') {
+                                codeContainer.style.display = 'block';
+                                codeContainer.innerHTML = '<div class="spinner"></div> 웹훅 데이터를 불러오는 중...';
+                                
+                                // 웹훅 데이터를 가져오는 API 엔드포인트를 만들어야 합니다
+                                fetch(`/webhook/data?path=${encodeURIComponent(path)}`)
+                                    .then(response => response.json())
+                                    .then(data => {
+                                        codeContainer.innerHTML = `<pre class="code-block">${JSON.stringify(data, null, 2)}</pre>`;
+                                    })
+                                    .catch(error => {
+                                        codeContainer.innerHTML = `<div class="alert alert-danger">웹훅 데이터를 불러오는 중 오류가 발생했습니다: ${error}</div>`;
+                                    });
+                            } else {
+                                codeContainer.style.display = 'none';
+                            }
+                        });
+                    });
+                })
+                .catch(error => {
+                    loadingHistory.style.display = 'none';
+                    historyContainer.innerHTML = `<div class="alert alert-danger">데이터를 불러오는 중 오류가 발생했습니다: ${error}</div>`;
+                });
+        }
+
+        // 최근 거래 기록 가져오기 (샘플 웹훅 데이터 사용)
+        function fetchLatestTrades() {
+            const tradesContainer = document.getElementById('trades-container');
+            const loadingTrades = document.getElementById('loading-trades');
+            
+            tradesContainer.innerHTML = '';
+            loadingTrades.style.display = 'block';
+            
+            fetch('/webhook/latest')
+                .then(response => response.json())
+                .then(data => {
+                    loadingTrades.style.display = 'none';
+                    
+                    if (!data.recent_signals || data.recent_signals.length === 0) {
+                        tradesContainer.innerHTML = '<div class="alert alert-info">최근 거래 기록이 없습니다.</div>';
+                        return;
+                    }
+                    
+                    // 성능 정보 표시
+                    if (data.performance) {
+                        const performanceCard = document.createElement('div');
+                        performanceCard.className = 'card mb-4';
+                        performanceCard.innerHTML = `
+                            <div class="card-header">
+                                <h4>전략 성능 요약</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-3">
+                                        <h5>총 거래</h5>
+                                        <p class="h3">${data.performance.total_trades}회</p>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <h5>승률</h5>
+                                        <p class="h3">${data.performance.winrate}%</p>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <h5>수익 요소</h5>
+                                        <p class="h3">${data.performance.profit_factor}</p>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <h5>최대 낙폭</h5>
+                                        <p class="h3">${data.performance.max_drawdown}%</p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        tradesContainer.appendChild(performanceCard);
+                    }
+                    
+                    // 거래 기록 표시
+                    const tradesCard = document.createElement('div');
+                    tradesCard.className = 'card';
+                    tradesCard.innerHTML = `
+                        <div class="card-header">
+                            <h4>최근 거래 기록</h4>
+                        </div>
+                        <div class="card-body" id="trades-list"></div>
+                    `;
+                    tradesContainer.appendChild(tradesCard);
+                    
+                    const tradesList = document.getElementById('trades-list');
+                    data.recent_signals.forEach(trade => {
+                        const tradeElem = document.createElement('div');
+                        tradeElem.className = 'trade-record';
+                        
+                        // 시간 형식 변환
+                        const date = new Date(trade.time);
+                        const formattedDate = date.toLocaleString('ko-KR');
+                        
+                        // 이익/손실 클래스 결정
+                        const profitLossClass = trade.profit_loss >= 0 ? 'profit' : 'loss';
+                        const profitLossSign = trade.profit_loss >= 0 ? '+' : '';
+                        
+                        tradeElem.innerHTML = `
+                            <div class="d-flex justify-content-between">
+                                <h5>${trade.type} @ ${trade.entry_price}</h5>
+                                <span class="timestamp">${formattedDate}</span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <p>
+                                    진입: ${trade.entry_price} → 청산: ${trade.exit_price}<br>
+                                    RSI: ${trade.rsi_value}
+                                </p>
+                                <p class="h4 ${profitLossClass}">${profitLossSign}${trade.profit_loss}%</p>
+                            </div>
+                        `;
+                        tradesList.appendChild(tradeElem);
+                    });
+                })
+                .catch(error => {
+                    loadingTrades.style.display = 'none';
+                    tradesContainer.innerHTML = `<div class="alert alert-danger">데이터를 불러오는 중 오류가 발생했습니다: ${error}</div>`;
+                });
+        }
+
+        // 분석 테스트 실행
+        function runTest() {
+            const testResult = document.getElementById('test-result');
+            const loadingTest = document.getElementById('loading-test');
+            const runTestBtn = document.getElementById('run-test');
+            
+            testResult.innerHTML = '';
+            loadingTest.style.display = 'block';
+            runTestBtn.disabled = true;
+            
+            fetch('/webhook/test-analyze', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({})
+            })
+                .then(response => response.json())
+                .then(data => {
+                    loadingTest.style.display = 'none';
+                    runTestBtn.disabled = false;
+                    
+                    if (data.error) {
+                        testResult.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                        return;
+                    }
+                    
+                    const resultCard = document.createElement('div');
+                    resultCard.className = 'card';
+                    resultCard.innerHTML = `
+                        <div class="card-header">
+                            <h4>분석 결과</h4>
+                        </div>
+                        <div class="card-body">
+                            <h5>분석 설명:</h5>
+                            <p>${data.explanation}</p>
+                            <h5 class="mt-4">수정된 코드:</h5>
+                            <div id="code-view"></div>
+                        </div>
+                    `;
+                    testResult.appendChild(resultCard);
+                    
+                    // 수정된 코드 가져오기
+                    fetch(`/webhook/code?path=${encodeURIComponent(data.file)}`)
+                        .then(response => response.text())
+                        .then(code => {
+                            document.getElementById('code-view').innerHTML = `<pre class="code-block">${code}</pre>`;
+                        })
+                        .catch(error => {
+                            document.getElementById('code-view').innerHTML = `<div class="alert alert-danger">코드를 불러오는 중 오류가 발생했습니다: ${error}</div>`;
+                        });
+                })
+                .catch(error => {
+                    loadingTest.style.display = 'none';
+                    runTestBtn.disabled = false;
+                    testResult.innerHTML = `<div class="alert alert-danger">분석 중 오류가 발생했습니다: ${error}</div>`;
+                });
+        }
+
+        // 서버 상태 확인
+        function checkServerStatus() {
+            fetch('/')
+                .then(response => {
+                    if (response.ok) {
+                        document.getElementById('server-status').textContent = '실행 중';
+                        
+                        // OpenAI API 키 상태에 따라 AI 모델 표시
+                        fetch('/webhook/status')
+                            .then(response => response.json())
+                            .then(data => {
+                                document.getElementById('ai-model').textContent = data.use_openai ? 'GPT-4' : '모의 구현';
+                                document.getElementById('webhook-status').textContent = data.webhook_ready ? '준비됨' : '구성 필요';
+                            })
+                            .catch(() => {
+                                document.getElementById('ai-model').textContent = '상태 확인 불가';
+                            });
+                    } else {
+                        document.getElementById('server-status').textContent = '오류 발생';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('server-status').textContent = '연결 불가';
+                });
+        }
+    </script>
 </body>
 </html> 

@@ -38,6 +38,8 @@ storage/strategies/*.pine
 storage/strategies/meta_*.json
 !storage/strategies/current.pine
 !storage/strategies/example.pine
+!storage/webhooks/.gitkeep
+!storage/strategies/.gitkeep
 
 # 기타
 .DS_Store
