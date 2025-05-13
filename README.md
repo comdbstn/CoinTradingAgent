@@ -1,130 +1,116 @@
-# Auto-Trading Code Modifier
+# 자동 트레이딩 코드 수정 시스템
 
-TradingView에서 보낸 웹훅을 기반으로 Pine Script 거래 전략을 자동으로 분석하고 개선하는 서비스입니다.
+TradingView 웹훅을 받아 Pine Script 트레이딩 전략 코드를 자동으로 분석하고 개선하는 시스템입니다.
 
-## 기능
+## 주요 기능
 
-- TradingView 웹훅 수신 및 로깅
-- GPT-4o를 활용한 거래 전략 분석 및 개선
-- 전략 코드 버전 관리
-- 웹 인터페이스를 통한 결과 확인
+1. TradingView에서 알림 웹훅 수신
+2. 성능 데이터 기반 Pine Script 코드 분석
+3. OpenAI API를 활용한 전략 코드 자동 개선
+4. 수정 내역 추적 및 관리
+5. Vercel 서버리스 환경에서 실행 가능
 
-## 시작하기
+## 설치 및 실행
 
-### 필수 요구사항
+### 필수 요구 사항
 
-- Python 3.8+
+- Python 3.9 이상
 - OpenAI API 키
 
-### 설치 및 실행
+### 로컬 환경에서 실행
 
-1. 저장소 클론
+1. 저장소 클론:
 ```bash
-git clone https://github.com/your-username/auto-trading-code-modifier.git
-cd auto-trading-code-modifier
+git clone [저장소 URL]
+cd [프로젝트 디렉토리]
 ```
 
-2. 가상 환경 생성 및 활성화
-```bash
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-```
-
-3. 의존성 설치
+2. 의존성 설치:
 ```bash
 pip install -r requirements.txt
 ```
 
-4. `.env` 파일 생성 및 OpenAI API 키 설정
-```bash
-echo "OPENAI_API_KEY=your-api-key-here" > .env
+3. 환경 변수 설정:
+`.env` 파일 생성:
+```
+OPENAI_API_KEY=your-api-key-here
 ```
 
-5. 서버 실행
+4. 서버 실행:
 ```bash
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload
 ```
 
-## 서버 사용 방법
+서버가 http://localhost:8000 에서 실행됩니다.
 
-### 웹훅 전송 테스트
+### Vercel에 배포하기
 
-TradingView에서 웹훅을 설정하기 전에 다음 명령으로 테스트 데이터를 보낼 수 있습니다:
-
+1. Vercel CLI 설치:
 ```bash
-curl -X POST http://localhost:8000/webhook/ \
-  -H "Content-Type: application/json" \
-  -d @storage/webhooks/webhook_test.json
+npm i -g vercel
 ```
 
-### API 엔드포인트
+2. 배포:
+```bash
+vercel
+```
 
-- `POST /webhook/`: TradingView 웹훅 수신
-- `GET /webhook/test`: 샘플 데이터로 분석 테스트
-- `GET /webhook/history`: 수정 내역 확인
+3. 환경 변수 설정:
+Vercel 대시보드에서 프로젝트 설정 -> 환경 변수에 `OPENAI_API_KEY`를 추가합니다.
+
+## API 엔드포인트
+
+- `POST /webhook/`: TradingView에서 웹훅 수신
+- `GET /webhook/test`: 테스트 분석 실행
+- `GET /webhook/history`: 수정 내역 조회
 - `GET /webhook/status`: 시스템 상태 확인
 - `GET /webhook/strategy/{filename}`: 특정 전략 코드 조회
 - `GET /webhook/webhook/{filename}`: 특정 웹훅 데이터 조회
 
-## TradingView 설정 방법
+## TradingView 웹훅 설정 방법
 
-TradingView에서 알림을 설정하고 웹훅 URL을 다음과 같이 지정합니다:
-```
-http://your-server-address/webhook/
-```
-
-알림 메시지 형식은 다음과 같이 JSON 형식으로 설정해야 합니다:
-
+1. TradingView에서 알림 생성
+2. 웹훅 URL 설정: `https://[your-vercel-app-url]/webhook/`
+3. 웹훅 메시지 형식 (예시):
 ```json
 {
-  "ticker": "{{ticker}}",
-  "timestamp": "{{timenow}}",
-  "strategy_name": "Advanced RSI Strategy",
-  "timeframe": "{{interval}}",
+  "strategy_name": "RSI 전략",
   "performance": {
-    "total_trades": 65,
-    "profitable_trades": 24,
-    "losing_trades": 41,
-    "win_rate": 36.92,
-    "profit_factor": 0.76,
-    "max_drawdown": 12.4
+    "profit_factor": 1.5,
+    "win_rate": 60,
+    "avg_profit": 2.3,
+    "max_drawdown": 15
   },
-  "recent_trades": [
-    {
-      "timestamp": "{{timenow}}",
-      "type": "{{strategy.order.action}}",
-      "entry_price": {{strategy.order.price}},
-      "exit_price": {{strategy.position_size}}
-    }
-  ],
   "trading_problem": "RSI 전략이 최근 상승 추세에서 수익성이 낮습니다. 과매수/과매도 기준이 현재 시장 상황에 최적화되지 않았으며, 이익실현 및 손절매 설정이 개선이 필요합니다.",
-  "suggested_improvements": "RSI 과매도 기준을 낮추고, 이익실현 비율을 높이세요. 트레일링 스탑을 적용하고, 매도 신호에 볼린저 밴드를 활용하세요."
+  "suggested_improvements": "RSI 과매도 기준을 28로 낮추고, 이익실현 비율을 5%에서 7%로 높이세요. 트레일링 스탑을 2%로 적용하고, 매도 신호에 볼린저 밴드 상단을 추가로 활용하여 더 정확한 매도 시점을 잡으세요."
 }
 ```
 
-## 도커로 실행하기
+## 디렉토리 구조
 
-1. 도커 이미지 빌드
-```bash
-docker build -t auto-trading-code-modifier .
+```
+/
+├── api/                        # Vercel 서버리스 함수
+│   ├── index.py                # 메인 FastAPI 앱
+│   ├── webhook_router.py       # 웹훅 처리 라우터
+│   └── pine_modifier.py        # Pine Script 수정 모듈
+├── static/                     # 정적 파일
+│   └── index.html              # 웹 인터페이스
+├── storage/                    # 저장소 디렉토리
+│   ├── strategies/             # 전략 파일 저장소
+│   │   ├── current.pine        # 현재 사용 중인 전략
+│   │   └── example.pine        # 예제 전략
+│   └── webhooks/               # 웹훅 로그 저장소
+│       └── webhook_test.json   # 테스트용 웹훅 데이터
+├── requirements.txt            # 파이썬 의존성
+├── vercel.json                 # Vercel 배포 설정
+└── README.md                   # 문서
 ```
 
-2. 도커 컨테이너 실행
-```bash
-docker run -d -p 8000:8000 \
-  -e OPENAI_API_KEY=your-api-key-here \
-  --name trading-code-modifier \
-  auto-trading-code-modifier
-```
+## 라이센스
 
-## 기여 방법
+MIT License
 
-1. 이 저장소를 포크합니다
-2. 새 기능 브랜치를 생성합니다 (`git checkout -b feature/amazing-feature`)
-3. 변경 사항을 커밋합니다 (`git commit -m 'Add some amazing feature'`)
-4. 브랜치를 푸시합니다 (`git push origin feature/amazing-feature`)
-5. Pull Request를 생성합니다
+## 문의 및 기여
 
-## 라이선스
-
-이 프로젝트는 MIT 라이선스에 따라 배포됩니다. 자세한 내용은 `LICENSE` 파일을 참조하세요. 
+이슈 또는 PR은 언제든지 환영합니다. 질문이나 제안이 있으시면 이슈를 등록해주세요. 

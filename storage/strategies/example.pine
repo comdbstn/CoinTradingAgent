@@ -1,30 +1,32 @@
 //@version=4
-strategy("Optimized RSI Strategy with Bollinger Bands", overlay=true)
+strategy("Advanced RSI Strategy", overlay=true)
 
-// 입력 변수
-rsiLength = input(14, title="RSI 기간", tooltip="RSI 계산에 사용되는 기간입니다.")
-rsiOverbought = input(70, title="RSI 과매수 기준", tooltip="이 값 이상이면 과매수 상태로 판단합니다.")
-rsiOversold = input(28, title="RSI 과매도 기준", tooltip="이 값 이하면 과매도 상태로 판단합니다.")
-takeProfitPct = input(7.0, title="이익 실현 %", tooltip="목표 수익률입니다.")
-stopLossPct = input(3.0, title="손절매 %", tooltip="허용 손실률입니다.")
-useBollingerBands = input(true, title="볼린저 밴드 추가", tooltip="매도 신호에 볼린저 밴드를 추가합니다.")
-bbLength = input(20, title="볼린저 밴드 기간", tooltip="볼린저 밴드 계산에 사용되는 기간입니다.")
-bbMultiplier = input(2.0, title="볼린저 밴드 표준편차", tooltip="밴드 너비를 계산하는 표준편차 승수입니다.")
-useTrailingStop = input(true, title="트레일링 스탑 사용", tooltip="트레일링 스탑을 적용합니다.")
-trailingStopPct = input(2.0, title="트레일링 스탑 %", tooltip="트레일링 스탑 비율입니다.")
+// 입력 변수 설정
+rsiLength = input(14, title="RSI 기간", tooltip="RSI 계산에 사용할 기간입니다.")
+rsiOverbought = input(70, title="RSI 과매수 기준", tooltip="RSI가 이 값을 초과하면 과매수로 간주합니다.")
+rsiOversold = input(30, title="RSI 과매도 기준", tooltip="RSI가 이 값보다 낮으면 과매도로 간주합니다.")
+takeProfitPct = input(5.0, title="이익 실현 %", tooltip="이익 실현 백분율입니다.")
+stopLossPct = input(3.0, title="손절매 %", tooltip="손절매 백분율입니다.")
+
+// 볼린저 밴드 설정
+useBollingerBands = input(false, title="볼린저 밴드 사용", tooltip="매매 신호에 볼린저 밴드를 사용합니다.")
+bbLength = input(20, title="볼린저 기간", tooltip="볼린저 밴드 계산에 사용할 기간입니다.")
+bbMultiplier = input(2.0, title="볼린저 배수", minval=0.1, maxval=5.0, tooltip="표준편차 배수입니다.")
 
 // RSI 계산
 rsiValue = rsi(close, rsiLength)
 
 // 볼린저 밴드 계산
-bbMiddle = sma(close, bbLength)
-bbStdDev = stdev(close, bbLength)
-bbUpper = bbMiddle + bbMultiplier * bbStdDev
-bbLower = bbMiddle - bbMultiplier * bbStdDev
+bbBasis = sma(close, bbLength)
+bbDev = bbMultiplier * stdev(close, bbLength)
+bbUpper = bbBasis + bbDev
+bbLower = bbBasis - bbDev
 
 // 진입 조건
 longCondition = crossover(rsiValue, rsiOversold)
-shortCondition = useBollingerBands ? (crossunder(rsiValue, rsiOverbought) and close >= bbUpper) : crossunder(rsiValue, rsiOverbought)
+shortCondition = useBollingerBands ? 
+    crossunder(rsiValue, rsiOverbought) and close > bbUpper :
+    crossunder(rsiValue, rsiOverbought)
 
 // 전략 실행
 if (longCondition)
@@ -33,35 +35,16 @@ if (longCondition)
 if (shortCondition)
     strategy.entry("RSI_Short", strategy.short)
 
-// 이익 실현 및 손절매 설정 (개선된 방법)
-// 트레일링 스탑과 이익실현 비율을 적용
-if (strategy.position_size > 0)
-    if (useTrailingStop)
-        strategy.exit("TP_TS_Long", "RSI_Long", 
-                      profit=close * takeProfitPct / 100, 
-                      loss=close * stopLossPct / 100,
-                      trail_points=close * trailingStopPct / 100)
-    else
-        strategy.exit("TP_SL_Long", "RSI_Long", 
-                      profit=close * takeProfitPct / 100, 
-                      loss=close * stopLossPct / 100)
-else if (strategy.position_size < 0)
-    if (useTrailingStop)
-        strategy.exit("TP_TS_Short", "RSI_Short", 
-                      profit=close * takeProfitPct / 100, 
-                      loss=close * stopLossPct / 100,
-                      trail_points=close * trailingStopPct / 100)
-    else
-        strategy.exit("TP_SL_Short", "RSI_Short", 
-                      profit=close * takeProfitPct / 100, 
-                      loss=close * stopLossPct / 100)
+// 이익 실현 및 손절매 설정
+strategy.exit("TP_SL_Long", "RSI_Long", profit=close * takeProfitPct / 100, loss=close * stopLossPct / 100)
+strategy.exit("TP_SL_Short", "RSI_Short", profit=close * takeProfitPct / 100, loss=close * stopLossPct / 100)
 
 // 시각화
 plot(rsiValue, "RSI", color.blue)
 hline(rsiOverbought, "과매수 기준", color.red)
 hline(rsiOversold, "과매도 기준", color.green)
 
-// 볼린저 밴드 플롯
-plot(useBollingerBands ? bbUpper : na, "BB Upper", color.rgba(255, 70, 70, 50), 2)
-plot(useBollingerBands ? bbMiddle : na, "BB Middle", color.rgba(70, 70, 255, 50), 2)
-plot(useBollingerBands ? bbLower : na, "BB Lower", color.rgba(70, 255, 70, 50), 2) 
+// 볼린저 밴드 표시
+plot(useBollingerBands ? bbUpper : na, "BB Upper", color.red, 1, plot.style_line)
+plot(useBollingerBands ? bbBasis : na, "BB Middle", color.yellow, 1, plot.style_line)
+plot(useBollingerBands ? bbLower : na, "BB Lower", color.green, 1, plot.style_line) 

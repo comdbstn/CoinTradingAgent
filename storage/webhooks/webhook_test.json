@@ -1,0 +1,56 @@
+{
+  "timestamp": "2023-05-14 12:30:45",
+  "ticker": "BTCUSD",
+  "strategy_name": "Simple RSI Strategy",
+  "timeframe": "1D",
+  "performance": {
+    "total_trades": 65,
+    "profitable_trades": 24,
+    "losing_trades": 41,
+    "win_rate": 36.92,
+    "profit_factor": 0.76,
+    "avg_profit": 1.2,
+    "max_drawdown": 12.4
+  },
+  "recent_trades": [
+    {
+      "timestamp": "2023-05-12 10:15:30",
+      "direction": "long",
+      "result": "loss",
+      "profit_pct": -2.1
+    },
+    {
+      "timestamp": "2023-05-08 14:22:15",
+      "direction": "long",
+      "result": "loss",
+      "profit_pct": -1.8
+    },
+    {
+      "timestamp": "2023-05-05 09:30:45",
+      "direction": "short",
+      "result": "profit",
+      "profit_pct": 3.2
+    },
+    {
+      "timestamp": "2023-04-28 11:45:20",
+      "direction": "long",
+      "result": "loss",
+      "profit_pct": -2.4
+    },
+    {
+      "timestamp": "2023-04-25 15:10:05",
+      "direction": "short",
+      "result": "profit",
+      "profit_pct": 2.7
+    }
+  ],
+  "trading_problem": "RSI 전략이 최근 상승 추세에서 수익성이 낮습니다. 특히 롱 포지션의 승률이 낮고, 과매도 기준이 너무 높게 설정되어 있어 진입 시점이 적절하지 않습니다. 또한 이익실현 및 손절매 설정이 최근 시장 변동성에 최적화되지 않았습니다.",
+  "suggested_improvements": "RSI 과매도 기준을 30에서 28로 낮추고, 이익실현 비율을 5%에서 7%로 높이세요. 트레일링 스탑을 2%로 적용하고, 매도 신호에 볼린저 밴드 상단을 추가로 활용하여 더 정확한 매도 시점을 잡으세요. 최근 시장이 높은 변동성을 보이므로 볼린저 밴드 표준편차를 2.0에서 2.2로 올려보세요.",
+  "market_info": {
+    "current_price": 89650.5,
+    "average_volume": 1235.8,
+    "volatility": 0.87,
+    "current_rsi": 42.5,
+    "trend": "sideways with bullish bias"
+  }
+} 

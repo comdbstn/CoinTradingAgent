@@ -25,6 +25,7 @@ ENV/
 
 # .env 파일 (보안 정보 포함)
 .env
+.env.local
 
 # 로그 파일 및 임시 파일
 logs/
@@ -40,6 +41,14 @@ storage/strategies/meta_*.json
 !storage/strategies/example.pine
 !storage/webhooks/.gitkeep
 !storage/strategies/.gitkeep
+storage/strategies/modified_*
+storage/strategies/metadata_*
+!/storage/strategies/current.pine
+!/storage/strategies/example.pine
+!/storage/webhooks/webhook_test.json
+
+# Vercel
+.vercel
 
 # 기타
 .DS_Store
