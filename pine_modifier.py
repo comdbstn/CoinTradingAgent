@@ -14,17 +14,11 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("pine_modifier")
 
 # 환경 변수 로드
-load_dotenv()
-
-# API 키 확인 및 적절한 모듈 선택
-api_key = os.getenv("OPENAI_API_KEY")
-if api_key:
-    use_mock = False
-    print("실제 OpenAI API를 사용합니다.")
-    openai.api_key = api_key
-else:
-    use_mock = True
-    print("API 키가 없어 모의 OpenAI API를 사용합니다.")
+try:
+    load_dotenv()
+    logger.debug("환경 변수를 로드했습니다.")
+except Exception as e:
+    logger.warning(f"환경 변수 로드 중 오류: {str(e)}")
 
 def load_prompt_template():
     """프롬프트 템플릿을 로드합니다."""
@@ -60,9 +54,15 @@ def generate_modified_script(original_code, webhook_data):
     """
     웹훅 데이터와 원본 전략 코드를 기반으로 OpenAI API를 사용하여 수정된 코드를 생성합니다.
     """
+    # OpenAI API 키 확인
+    api_key = os.getenv("OPENAI_API_KEY")
+    
     if not api_key:
-        logger.warning("API 키가 없어 코드 수정을 건너뜁니다.")
-        return original_code + "\n\n// OpenAI API 키가 설정되지 않아 코드 수정이 불가능합니다."
+        logger.warning("OpenAI API 키가 설정되지 않았습니다.")
+        return original_code + "\n\n// OpenAI API 키가 설정되지 않아 코드 수정이 불가능합니다. 환경 변수 OPENAI_API_KEY를 설정해 주세요."
+    
+    # API 키 설정
+    openai.api_key = api_key
     
     try:
         logger.debug("전략 코드 수정 시작")

@@ -31,16 +31,23 @@ if is_vercel:
 
 logger.debug(f"디렉토리 설정 - LOG_DIR: {LOG_DIR}, STRATEGY_DIR: {STRATEGY_DIR}")
 
+# OpenAI API 키 확인
+api_key = os.getenv("OPENAI_API_KEY")
+if api_key:
+    logger.debug("OpenAI API 키가 설정되어 있습니다.")
+else:
+    logger.warning("OpenAI API 키가 설정되어 있지 않습니다. 기능이 제한됩니다.")
+
 try:
     # pine_modifier 모듈 임포트
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     try:
         # 직접 임포트 시도
-        from pine_modifier import generate_modified_script, save_modification, test_analysis, api_key
+        from pine_modifier import generate_modified_script, save_modification, test_analysis
         logger.debug("pine_modifier 모듈 직접 임포트 성공")
     except ImportError:
         # API 패키지 내부에서 임포트 시도
-        from api.pine_modifier import generate_modified_script, save_modification, test_analysis, api_key
+        from api.pine_modifier import generate_modified_script, save_modification, test_analysis
         logger.debug("api.pine_modifier 모듈 임포트 성공")
 except Exception as e:
     logger.error(f"pine_modifier 모듈 임포트 실패: {str(e)}")
@@ -54,8 +61,6 @@ except Exception as e:
     
     def save_modification(original_code, modified_code, webhook_data, strategy_dir):
         return {"error": "모듈 임포트 실패"}
-    
-    api_key = None
 
 router = APIRouter()
 
@@ -334,7 +339,13 @@ async def get_system_status():
             logger.error(f"웹훅 파일 목록 조회 중 오류: {str(list_error)}")
         
         # OpenAI API 키 상태
-        api_key_status = "사용 가능" if api_key is not None else "설정되지 않음"
+        if api_key:
+            api_key_status = "사용 가능"
+            api_key_message = "OpenAI API가 정상적으로 구성되었습니다."
+        else:
+            api_key_status = "미설정"
+            api_key_message = "OpenAI API 키가 설정되지 않았습니다. 환경 변수 OPENAI_API_KEY를 설정해 주세요."
+        
         logger.debug(f"API 키 상태: {api_key_status}")
         
         return {
@@ -343,7 +354,10 @@ async def get_system_status():
             "strategy_count": strategy_count,
             "modification_count": metadata_count,
             "latest_webhook": latest_webhook,
-            "api_key_status": api_key_status,
+            "api_key": {
+                "status": api_key_status,
+                "message": api_key_message
+            },
             "server_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "directories": {
                 "LOG_DIR": LOG_DIR,
