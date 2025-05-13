@@ -16,31 +16,6 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 logger.debug(f"sys.path: {sys.path}")
 
-try:
-    # 모듈 임포트
-    from api.webhook_router import router as webhook_router
-    logger.debug("webhook_router 모듈 임포트 성공")
-except Exception as e:
-    logger.error(f"webhook_router 모듈 임포트 실패: {str(e)}")
-    import traceback
-    logger.error(traceback.format_exc())
-
-# FastAPI 앱 생성
-app = FastAPI(
-    title="자동 트레이딩 코드 수정기",
-    description="TradingView에서 웹훅을 받아 Pine Script 코드를 분석하고 개선하는 API",
-    version="1.0.0"
-)
-
-# CORS 미들웨어 설정
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # 모든 오리진 허용 (운영 환경에서는 제한해야 함)
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 # 디렉토리 설정
 def setup_directories():
     """
@@ -82,14 +57,59 @@ def setup_directories():
         logger.error(f"디렉토리 설정 중 오류: {str(e)}")
         import traceback
         logger.error(traceback.format_exc())
+        # Vercel 환경에서 디렉토리 생성 실패 시 기본값 설정
+        # 오류가 발생해도 기본 경로는 설정해야 함
+        if os.environ.get("VERCEL", ""):
+            os.environ["LOG_DIR"] = "/tmp/storage/webhooks"
+            os.environ["STRATEGY_DIR"] = "/tmp/storage/strategies"
+            return {
+                "storage_base": "/tmp/storage",
+                "webhook_dir": "/tmp/storage/webhooks",
+                "strategy_dir": "/tmp/storage/strategies",
+                "error": str(e)
+            }
         raise
 
-# 서버 시작 시 디렉토리 설정
+# 모듈 임포트보다 먼저 디렉토리 설정
 try:
     directories = setup_directories()
     logger.debug(f"디렉토리 설정 완료: {directories}")
 except Exception as e:
     logger.error(f"디렉토리 설정 실패: {str(e)}")
+    # 기본값 설정
+    directories = {
+        "error": str(e),
+        "fallback": True,
+        "webhook_dir": "/tmp/storage/webhooks",
+        "strategy_dir": "/tmp/storage/strategies"
+    }
+    os.environ["LOG_DIR"] = directories["webhook_dir"]
+    os.environ["STRATEGY_DIR"] = directories["strategy_dir"]
+
+try:
+    # 모듈 임포트
+    from api.webhook_router import router as webhook_router
+    logger.debug("webhook_router 모듈 임포트 성공")
+except Exception as e:
+    logger.error(f"webhook_router 모듈 임포트 실패: {str(e)}")
+    import traceback
+    logger.error(traceback.format_exc())
+
+# FastAPI 앱 생성
+app = FastAPI(
+    title="자동 트레이딩 코드 수정기",
+    description="TradingView에서 웹훅을 받아 Pine Script 코드를 분석하고 개선하는 API",
+    version="1.0.0"
+)
+
+# CORS 미들웨어 설정
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 모든 오리진 허용 (운영 환경에서는 제한해야 함)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # 라우터 등록
 try:
@@ -119,7 +139,7 @@ async def root():
             "environment": {
                 "python_version": sys.version,
                 "is_vercel": bool(os.environ.get("VERCEL", "")),
-                "directories": directories if 'directories' in locals() else "설정 실패"
+                "directories": directories
             }
         }
     except Exception as e:
@@ -129,5 +149,6 @@ async def root():
         return {
             "status": "error",
             "message": f"오류가 발생했습니다: {str(e)}",
-            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "error_details": traceback.format_exc()
         } 
