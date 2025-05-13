@@ -1,0 +1,32 @@
+//@version=4
+strategy("Simple RSI Strategy", overlay=true)
+
+// 입력 변수
+rsiLength = input(14, title="RSI 기간")
+rsiOverbought = input(70, title="RSI 과매수 기준")
+rsiOversold = input(33, title="RSI 과매도 기준")
+takeProfitPct = input(5.0, title="이익 실현 %")
+stopLossPct = input(3.0, title="손절매 %")
+
+// RSI 계산
+rsiValue = rsi(close, rsiLength)
+
+// 진입 조건
+longCondition = crossover(rsiValue, rsiOversold)
+shortCondition = crossunder(rsiValue, rsiOverbought)
+
+// 전략 실행
+if (longCondition)
+    strategy.entry("RSI_Long", strategy.long)
+
+if (shortCondition)
+    strategy.entry("RSI_Short", strategy.short)
+
+// 이익 실현 및 손절매 설정
+strategy.exit("TP_SL_Long", "RSI_Long", profit=close*takeProfitPct/100, loss=close*stopLossPct/100)
+strategy.exit("TP_SL_Short", "RSI_Short", profit=close*takeProfitPct/100, loss=close*stopLossPct/100)
+
+// 시각화
+plot(rsiValue, "RSI", color.blue)
+hline(rsiOverbought, "과매수 기준", color.red)
+hline(rsiOversold, "과매도 기준", color.green) 

@@ -1,0 +1,19 @@
+version: '3'
+
+services:
+  auto-trading-app:
+    build: .
+    container_name: auto-trading-app
+    restart: always
+    ports:
+      - "80:8000"
+    volumes:
+      - ./storage:/app/storage
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s 

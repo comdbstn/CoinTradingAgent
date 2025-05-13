@@ -1,0 +1,49 @@
+{
+  "timestamp": "2023-05-13T14:30:00Z",
+  "ticker": "BTCUSDT",
+  "timeframe": "1h",
+  "strategy_name": "Simple RSI Strategy",
+  "performance": {
+    "total_trades": 42,
+    "profitable_trades": 18,
+    "losing_trades": 24,
+    "winrate": 42.85,
+    "profit_factor": 0.85,
+    "max_drawdown": 8.2
+  },
+  "recent_signals": [
+    {
+      "time": "2023-05-13T10:00:00Z",
+      "type": "LONG",
+      "entry_price": 27450.5,
+      "exit_price": 27350.2,
+      "profit_loss": -0.36,
+      "rsi_value": 33.2
+    },
+    {
+      "time": "2023-05-12T22:00:00Z",
+      "type": "LONG",
+      "entry_price": 27100.0,
+      "exit_price": 27280.5,
+      "profit_loss": 0.67,
+      "rsi_value": 33.8
+    },
+    {
+      "time": "2023-05-12T14:00:00Z",
+      "type": "SHORT",
+      "entry_price": 27580.0,
+      "exit_price": 27490.5,
+      "profit_loss": 0.32,
+      "rsi_value": 70.2
+    },
+    {
+      "time": "2023-05-11T18:00:00Z",
+      "type": "LONG",
+      "entry_price": 27320.5,
+      "exit_price": 27180.0,
+      "profit_loss": -0.51,
+      "rsi_value": 33.4
+    }
+  ],
+  "notes": "RSI 과매도 값이 33으로 설정되어 있으며, 이는 일반적인 과매도 기준(30)보다 높습니다. 또한 이익 실현 및 손절매 설정 방식에 최적화가 필요합니다."
+} 

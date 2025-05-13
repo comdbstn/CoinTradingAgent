@@ -1,0 +1,42 @@
+# Git
+.git
+.github
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 로그와 데이터 파일 (컨테이너 내부에서 생성되게 하기 위해)
+storage/webhooks/*
+storage/strategies/*.pine
+storage/strategies/meta_*.json
+!storage/strategies/current.pine
+!storage/strategies/example.pine 
