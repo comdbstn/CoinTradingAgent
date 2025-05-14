@@ -17,57 +17,128 @@ import datetime
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("main")
 
-# 환경 변수 로드
+# 환경 변수 로드 (.env 파일)
 try:
     load_dotenv()
-except ImportError:
-    logger.warning("dotenv 모듈을 불러올 수 없습니다. 환경 변수는 시스템에서 직접 로드됩니다.")
+    logger.debug("환경 변수 파일(.env)을 로드했습니다.")
+except Exception as e:
+    logger.warning(f"환경 변수 로드 중 오류: {str(e)}")
 
-# Vercel 환경 확인
+# 중요 환경 변수 확인
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if OPENAI_API_KEY:
+    # 키의 일부만 로그에 표시 (보안)
+    key_preview = OPENAI_API_KEY[:4] + "..." + OPENAI_API_KEY[-4:] if len(OPENAI_API_KEY) > 8 else "너무 짧음"
+    logger.debug(f"OpenAI API 키가 설정되어 있습니다: {key_preview}")
+    
+    # API 키를 전역 환경 변수로 설정
+    os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+else:
+    logger.warning("OpenAI API 키가 설정되어 있지 않습니다. 일부 기능이 작동하지 않을 수 있습니다.")
+
+# Vercel 환경인지 확인
 is_vercel = os.environ.get("VERCEL", "") != ""
 logger.debug(f"Vercel 환경 확인: {is_vercel}")
 
 # 기본 디렉토리 설정
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
+LOG_DIR = os.getenv("LOG_DIR", os.path.join(BASE_DIR, "storage", "webhooks"))
+STRATEGY_DIR = os.getenv("STRATEGY_DIR", os.path.join(BASE_DIR, "storage", "strategies"))
 
-# 디렉토리 설정
+# Vercel 환경에서 디렉토리 설정 함수
 def setup_vercel_directories():
-    """Vercel 서버리스 환경에서 필요한 디렉토리를 생성합니다."""
+    """Vercel 환경에서 필요한 디렉토리를 설정합니다."""
     try:
-        # 기본 스토리지 디렉토리 설정 (Vercel에서는 /tmp를 사용)
-        storage_base = "/tmp/storage"
-        
-        # 웹훅 및 전략 디렉토리 경로
-        webhook_dir = os.path.join(storage_base, "webhooks")
-        strategy_dir = os.path.join(storage_base, "strategies")
-        
-        logger.debug(f"Vercel 디렉토리 설정 - 웹훅: {webhook_dir}, 전략: {strategy_dir}")
+        # 임시 디렉토리에 필요한 폴더 생성
+        tmp_root = "/tmp"
+        log_dir = os.path.join(tmp_root, "storage", "webhooks")
+        strategy_dir = os.path.join(tmp_root, "storage", "strategies")
+        static_dir = os.path.join(tmp_root, "static")
         
         # 디렉토리 생성
-        os.makedirs(webhook_dir, exist_ok=True)
+        os.makedirs(log_dir, exist_ok=True)
         os.makedirs(strategy_dir, exist_ok=True)
+        os.makedirs(static_dir, exist_ok=True)
         
         # 환경 변수 설정
-        os.environ["LOG_DIR"] = webhook_dir
+        os.environ["LOG_DIR"] = log_dir
         os.environ["STRATEGY_DIR"] = strategy_dir
         
+        # 기본 index.html 생성
+        index_html_path = os.path.join(static_dir, "index.html")
+        if not os.path.exists(index_html_path):
+            with open(index_html_path, "w") as f:
+                f.write("""
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>자동 트레이딩 코드 수정기</title>
+    <style>
+        body { font-family: 'Pretendard', -apple-system, sans-serif; background-color: #f9fafb; color: #111827; line-height: 1.6; margin: 0; padding: 2rem; }
+        .container { max-width: 800px; margin: 0 auto; background-color: white; padding: 2rem; border-radius: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        h1 { color: #1e40af; font-weight: 700; margin-top: 0; }
+        .api-status { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; margin-left: 0.5rem; }
+        .api-status.available { background-color: #dcfce7; color: #166534; }
+        .api-status.unavailable { background-color: #fee2e2; color: #991b1b; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>자동 트레이딩 코드 수정기</h1>
+        <p>TradingView에서 웹훅을 받아 Pine Script 코드를 분석하고 개선하는 API입니다.</p>
+        <div>
+            <h2>API 상태 <span class="api-status" id="apiStatus">확인 중...</span></h2>
+            <p id="apiMessage">API 상태를 확인하는 중입니다...</p>
+        </div>
+        <ul>
+            <li><a href="/webhook/test">테스트 분석 실행</a></li>
+            <li><a href="/webhook/history">수정 내역 조회</a></li>
+            <li><a href="/webhook/status">시스템 상태 확인</a></li>
+        </ul>
+    </div>
+    <script>
+        // API 상태 확인
+        fetch('/webhook/status')
+        .then(response => response.json())
+        .then(data => {
+            const statusEl = document.getElementById('apiStatus');
+            const messageEl = document.getElementById('apiMessage');
+            
+            if (data.api_key && data.api_key.status === '사용 가능') {
+                statusEl.textContent = '사용 가능';
+                statusEl.className = 'api-status available';
+                messageEl.textContent = data.api_key.message || 'OpenAI API가 정상적으로 구성되었습니다.';
+            } else {
+                statusEl.textContent = '미설정';
+                statusEl.className = 'api-status unavailable';
+                messageEl.textContent = data.api_key.message || 'OpenAI API 키가 설정되지 않았습니다.';
+            }
+        })
+        .catch(error => {
+            const statusEl = document.getElementById('apiStatus');
+            const messageEl = document.getElementById('apiMessage');
+            statusEl.textContent = '오류';
+            statusEl.className = 'api-status unavailable';
+            messageEl.textContent = '서버 연결 중 오류가 발생했습니다.';
+        });
+    </script>
+</body>
+</html>
+                """)
+        
+        logger.debug(f"Vercel 디렉토리 설정 완료: LOG_DIR={log_dir}, STRATEGY_DIR={strategy_dir}")
         return {
-            "storage_base": storage_base,
-            "webhook_dir": webhook_dir,
-            "strategy_dir": strategy_dir
+            "LOG_DIR": log_dir, 
+            "STRATEGY_DIR": strategy_dir,
+            "STATIC_DIR": static_dir
         }
     except Exception as e:
-        logger.error(f"Vercel 디렉토리 설정 중 오류: {str(e)}")
+        logger.error(f"Vercel 디렉토리 설정 오류: {str(e)}")
         logger.error(traceback.format_exc())
-        # 오류 발생 시에도 기본값 설정
-        os.environ["LOG_DIR"] = "/tmp/storage/webhooks"
-        os.environ["STRATEGY_DIR"] = "/tmp/storage/strategies"
-        return {
-            "error": str(e),
-            "webhook_dir": "/tmp/storage/webhooks",
-            "strategy_dir": "/tmp/storage/strategies"
-        }
+        return {"error": str(e)}
 
 # 정적 파일 디렉토리 생성
 try:
